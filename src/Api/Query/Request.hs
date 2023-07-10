@@ -85,7 +85,7 @@ requestQueryTranslator _ (Qualified quant _) = undefinedQualifier quant "request
 
 -- DON'T CHANGE THIS UNLESS YOU CHANGE /Request/Request.ts AS WELL
 parseId :: Traversable t => t Text -> Maybe (t (ID Request))
-parseId = traverse (fmap toId . go (0 :: Int) . unpack . T.reverse . T.toUpper)
+parseId = traverse (fmap (toId.fromIntegral) . go (0::Int) . unpack . T.reverse . T.toUpper)
   where
     alphabetSize = length alphabet
     alphabet = "123456789ABCDEFGHIJKLMNPQRSTUVWXYZ"

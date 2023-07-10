@@ -8,9 +8,9 @@ import Data.Time
 import Data.Time.Clock.POSIX
 import Database.Selda
 import Database.Selda.SqlType (
-    Lit (LCustom, LInt),
-    SqlTypeRep (TInt),
-    SqlValue (SqlInt),
+    Lit (LCustom, LInt64),
+    SqlTypeRep (TInt64),
+    SqlValue (SqlInt64),
  )
 
 
@@ -20,21 +20,21 @@ newtype DateTime = DateTime UTCTime
 
 instance SqlType DateTime where
     mkLit (DateTime ut) =
-        LCustom TInt
-            . LInt
+        LCustom TInt64
+            . LInt64
             . round
             . nominalDiffTimeToSeconds
             . utcTimeToPOSIXSeconds
             $ ut
-    sqlType _ = TInt
-    fromSql (SqlInt s) =
+    sqlType _ = TInt64
+    fromSql (SqlInt64 s) =
         DateTime
             . posixSecondsToUTCTime
             . secondsToNominalDiffTime
             . fromIntegral
             $ s
     fromSql v = error $ "fromSql: DateTime column with non-int value: " ++ show v
-    defaultValue = LCustom TInt $ LInt def
+    defaultValue = LCustom TInt64 $ LInt64 def
 
 
 instance FromJSON DateTime where

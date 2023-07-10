@@ -10,8 +10,8 @@ import Api.Query.Runner
 import Control.Lens (to, (^..), (^?), _Just)
 import Control.Monad (forM_, unless)
 import Data.Aeson (KeyValue ((.=)), Value, object, toJSON)
-import Data.Aeson.Lens (AsPrimitive (_String), key, values, _JSON)
-import Data.Environment (EnvAction, askUserInfo, envIO, fromJsonKey, jsonData, jsonParam, jsonParamText, param, rescue, status)
+import Data.Aeson.Lens (key, values, _JSON, _String)
+import Data.Environment (EnvAction, askUserInfo, envIO, jsonData, jsonParam, jsonParamText, param, rescue, status)
 import Data.List (partition)
 import qualified Data.Model.Comment as C
 import Data.Model.DateTime (now)
@@ -25,7 +25,6 @@ import Data.Text (pack, unpack)
 import qualified Data.UserInfo as UI
 import Database.Selda
 import qualified Database.Table as Table
-import Debug.Trace (traceShow)
 import Network.HTTP.Types.Status (badRequest400, created201, forbidden403)
 
 
@@ -168,6 +167,7 @@ getRequestAndProps = do
     return ((title, teamId), properties)
 
 
+getProps :: EnvAction [(Text, Text)]
 getProps = do
     (js :: Value) <-
         jsonData `rescue` (flip failure badRequest400 . ("Query JSON parsing error: " <>))
@@ -202,7 +202,7 @@ addComment = do
     dt <- envIO now
     content <- jsonParamText "content"
     commentId <- insert Table.comments [C.Comment def reqId userId content dt]
-    success $ C.Comment (toId commentId) reqId userId content dt
+    success $ C.Comment (toId $ fromIntegral commentId) reqId userId content dt
     status created201
 
 

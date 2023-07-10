@@ -14,7 +14,7 @@ import Data.Model.SecurityToken (SecurityToken)
 import Data.Model.Team (Team)
 import Data.Model.User (User)
 import qualified Data.Text as T
-import Database.Selda
+import Database.Selda hiding (toLower)
 
 
 createAll :: MonadSelda m => m ()

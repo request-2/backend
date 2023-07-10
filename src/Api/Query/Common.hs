@@ -15,7 +15,7 @@ import Data.Model.DateTime (DateTime, parseDateTime)
 import Data.Model.Role (Role (..))
 import Data.Model.Status (Status (..))
 import Data.Text (toLower, unpack)
-import Database.Selda hiding (second)
+import Database.Selda hiding (second, toLower)
 import Database.Selda.Unsafe (operator)
 import Text.Read (readMaybe)
 
@@ -112,17 +112,19 @@ parseDate = traverse parseDateTime
 
 parseBool :: Text -> Maybe Bool
 parseBool t
-    | toLower t == "true" = Just True
-    | toLower t == "false" = Just False
+    | x == "true" = Just True
+    | x == "false" = Just False
     | otherwise = Nothing
+  where x = toLower t
 
 
 parseRole :: Text -> Maybe Role
 parseRole t
-    | toLower t == "admin" = Just Admin
-    | toLower t == "client" = Just Client
-    | toLower t == "operator" = Just Operator
+    | x == "admin" = Just Admin
+    | x == "client" = Just Client
+    | x == "operator" = Just Operator
     | otherwise = Nothing
+  where x = toLower t
 
 
 parseId :: Traversable t => t Text -> Maybe (t (ID a))
@@ -131,23 +133,25 @@ parseId = traverse (fmap toId . readMaybe . unpack)
 
 parseType :: Text -> Maybe Text
 parseType t
-    | toLower t `elem` ["p", "proteomics"] = Just "proteomics"
-    | toLower t `elem` ["s", "molecules", "small molecules"] = Just "small-molecules"
-    | toLower t `elem` ["l", "lipidomics"] = Just "lipidomics"
-    | toLower t `elem` ["m", "imaging", "ms imaging", "mass spectrometry imaging"] =
+    | x `elem` ["p", "proteomics"] = Just "proteomics"
+    | x `elem` ["s", "molecules", "small molecules"] = Just "small-molecules"
+    | x `elem` ["l", "lipidomics"] = Just "lipidomics"
+    | x `elem` ["m", "imaging", "ms imaging", "mass spectrometry imaging"] =
         Just "ms-imaging"
-    | toLower t `elem` ["g", "analytics", "general analytics"] = Just "general-analytics"
+    | x `elem` ["g", "analytics", "general analytics"] = Just "general-analytics"
     | otherwise = Nothing
+  where x = toLower t
 
 
 parseStatus :: Text -> Maybe Status
 parseStatus t
-    | toLower t == "pending" = Just Pending
-    | toLower t == "in progress" = Just InProgress
-    | toLower t == "done" = Just Done
-    | toLower t == "awaiting input" = Just AwaitingInput
-    | toLower t == "deleted" = Just Deleted
+    | x == "pending" = Just Pending
+    | x == "in progress" = Just InProgress
+    | x == "done" = Just Done
+    | x == "awaiting input" = Just AwaitingInput
+    | x == "deleted" = Just Deleted
     | otherwise = Nothing
+  where x = toLower t
 
 
 disj :: Foldable f => f (Col a Bool) -> Col a Bool

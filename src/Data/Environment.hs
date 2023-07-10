@@ -11,10 +11,10 @@ import Control.Lens (Getting, (^?))
 import Control.Monad (void)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Reader.Class (MonadReader, ask)
-import Control.Monad.State.Class (get)
 import qualified Control.Monad.Trans.Class as TR
 import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.Aeson (FromJSON, KeyValue ((.=)), ToJSON, Value, object)
+import Data.Aeson.Key (fromText)
 import Data.Aeson.Lens (key, _Integral, _JSON, _String)
 import Data.Monoid (First)
 import Data.Text (Text)
@@ -47,7 +47,7 @@ newtype EnvAction a = EA {unEA :: ReaderT Env (ActionT Lazy.Text (SeldaM PG)) a}
 
 instance MonadSelda EnvAction where
     type Backend EnvAction = PG
-    withConnection m = EA $ lift (lift (S get)) >>= unEA . m
+    withConnection m = EA $ lift (lift (S ask)) >>= unEA . m
 
 
 runEnvAction :: EnvAction a -> Env -> Action a
@@ -170,12 +170,12 @@ jsonParam s l = do
 
 
 jsonParamText :: Text -> EnvAction Text
-jsonParamText a = jsonParam a (key a . _String)
+jsonParamText a = jsonParam a (key (fromText a) . _String)
 
 
 jsonParamInt :: Integral a => Text -> EnvAction a
-jsonParamInt a = jsonParam a (key a . _Integral)
+jsonParamInt a = jsonParam a (key (fromText a) . _Integral)
 
 
 fromJsonKey :: (FromJSON a, ToJSON a) => Text -> EnvAction a
-fromJsonKey a = jsonParam a (key a . _JSON)
+fromJsonKey a = jsonParam a (key (fromText a) . _JSON)

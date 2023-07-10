@@ -11,9 +11,9 @@ import Api.Query.Runner (runQuery)
 import Api.Query.User
 import Control.Monad (forM, unless, void, when)
 import Data.Aeson (Value (..), object, toJSON, (.=))
+import qualified Data.Aeson.KeyMap
 import Data.Environment
 import Data.Foldable (fold)
-import qualified Data.HashMap.Lazy as HML
 import Data.List (intersperse)
 import Data.Member (Member (Member))
 import Data.Model.ApiKey (ApiKey (ApiKey))
@@ -326,7 +326,7 @@ getUsers = do
 
 userWithTeams :: Us.User -> [ID Team] -> Value
 userWithTeams user teams = case toJSON user of
-    Object o -> Object $ HML.insert "teamIds" (toJSON teams) o
+    Object o -> Object $ Data.Aeson.KeyMap.insert "teamIds" (toJSON teams) o
     val -> val
 
 
