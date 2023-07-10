@@ -1,23 +1,50 @@
 {-# LANGUAGE FlexibleContexts, OverloadedStrings, ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Query monad and primitive operations.
 module Database.Selda.Query
   ( select, selectValues, Database.Selda.Query.distinct
   , restrict, groupBy, limit, order, orderRandom
-  , aggregate, leftJoin, innerJoin
+  , aggregate, leftJoin, innerJoin, union, unionAll
   ) where
 import Data.Maybe (isNothing)
 import Database.Selda.Column
-import Database.Selda.Generic
+    ( NulOp(Fun0),
+      Exp(Lit, Col, NulOp),
+      SomeCol(Some, Named),
+      hideRenaming,
+      Same,
+      Row(..),
+      Col(..),
+      Columns(..) )
+import Database.Selda.Generic ( gNew, Relational, params )
 import Database.Selda.Inner
+    ( Aggregates(..),
+      LeftCols,
+      AggrCols,
+      OuterCols,
+      Inner,
+      Aggr(Aggr) )
 import Database.Selda.Query.Type
+    ( GenState(staticRestricts, groupCols, sources),
+      Query(..),
+      isolate,
+      renameAll,
+      freshName )
 import Database.Selda.SQL as SQL
+    ( Param(Param),
+      Order(Asc),
+      SQL(liveExtras, cols, restricts, groups, limits, ordering,
+          distinct),
+      JoinType(..),
+      SqlSource(Product, TableName, EmptyTable, Values, Union, Join),
+      sqlFrom )
 import Database.Selda.SqlType (SqlType)
-import Database.Selda.Table
-import Database.Selda.Transform
-import Control.Monad.State.Strict
-import Data.Proxy
+import Database.Selda.Table.Type ( ColInfo(colExpr), Table(Table) )
+import Database.Selda.Transform ( colNames, state2sql, allCols )
+import Control.Monad.State.Strict ( MonadState(put, get), modify )
+import Data.Proxy ( Proxy(..) )
 import GHC.Generics (Rep)
-import Unsafe.Coerce
+import Unsafe.Coerce ( unsafeCoerce )
 
 -- | Query the given table.
 select :: Relational a => Table a -> Query s (Row s a)
@@ -50,6 +77,39 @@ selectValues (row:rows) = Query $ do
     rows' = map (map defToVal . params) rows
     defToVal (Left x)  = x
     defToVal (Right x) = x
+
+internalUnion :: (Columns a, Columns (OuterCols a))
+              => Bool
+              -> Query (Inner s) a
+              -> Query (Inner s) a
+              -> Query s (OuterCols a)
+internalUnion union_all a b = Query $ do
+  (st_a, cols_a) <- isolate a
+  (st_b, cols_b) <- isolate b
+  renamed_a <- renameAll (fromTup cols_a)
+  renamed_b <- renameAll (fromTup cols_b)
+  let sql_a = (sqlFrom renamed_a (Product [state2sql st_a])) {liveExtras = renamed_a}
+      sql_b = (sqlFrom renamed_b (Product [state2sql st_b])) {liveExtras = renamed_b}
+      out_col_names = [n | Named n _ <- renamed_a]
+      out_cols = map (Some . Col) out_col_names
+  modify $ \st ->
+    st {sources = sqlFrom out_cols (Union union_all sql_a sql_b) : sources st}
+  return (toTup out_col_names)
+
+-- | The set union of two queries. Equivalent to the SQL @UNION@ operator.
+union :: (Columns a, Columns (OuterCols a))
+      => Query (Inner s) a
+      -> Query (Inner s) a
+      -> Query s (OuterCols a)
+union = internalUnion False
+
+-- | The multiset union of two queries.
+--   Equivalent to the SQL @UNION ALL@ operator.
+unionAll :: (Columns a, Columns (OuterCols a))
+         => Query (Inner s) a
+         -> Query (Inner s) a
+         -> Query s (OuterCols a)
+unionAll = internalUnion True
 
 -- | Restrict the query somehow. Roughly equivalent to @WHERE@.
 restrict :: Same s t => Col s Bool -> Query t ()
@@ -225,8 +285,8 @@ distinct :: (Columns a, Columns (OuterCols a))
          => Query (Inner s) a
          -> Query s (OuterCols a)
 distinct q = Query $ do
-  (inner_st, res) <- isolate q
+  res <- unQ q
   st <- get
-  let ss = sources inner_st
+  let ss = sources st
   put st {sources = [(sqlFrom (allCols ss) (Product ss)) {SQL.distinct = True}]}
   return (unsafeCoerce res)

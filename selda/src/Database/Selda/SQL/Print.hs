@@ -1,17 +1,24 @@
 {-# LANGUAGE GADTs, OverloadedStrings, CPP #-}
 -- | Pretty-printing for SQL queries. For some values of pretty.
 module Database.Selda.SQL.Print where
-import Database.Selda.Column
+import Database.Selda.Exp
+    ( BinOp(..), UnOp(..), NulOp(..), Exp(..), SomeCol(..) )
 import Database.Selda.SQL
+    ( Param(..),
+      Order(Desc, Asc),
+      SQL(SQL),
+      JoinType(InnerJoin, LeftJoin),
+      SqlSource(Union, EmptyTable, RawSql, TableName, Product, Values,
+                Join),
+      QueryFragment(..) )
 import Database.Selda.SQL.Print.Config (PPConfig)
 import qualified Database.Selda.SQL.Print.Config as Cfg
-import Database.Selda.SqlType
+import Database.Selda.SqlType ( Lit(LJust, LNull), SqlTypeRep )
 import Database.Selda.Types
+    ( TableName, ColName, fromColName, fromTableName )
 import Control.Monad.State
-import Data.List
-#if !MIN_VERSION_base(4, 11, 0)
-import Data.Monoid hiding (Product)
-#endif
+    ( liftM2, MonadState(get, put), runState, State )
+import Data.List ( group, sort )
 import Data.Text (Text)
 import qualified Data.Text as Text
 
@@ -107,7 +114,7 @@ freshQueryName = do
 
 -- | Pretty-print an SQL AST.
 ppSql :: SQL -> PP Text
-ppSql (SQL cs src r gs ord lim dist) = do
+ppSql (SQL cs src r gs ord lim _live dist) = do
   cs' <- mapM ppSomeCol cs
   src' <- ppSrc src
   r' <- ppRestricts r
@@ -163,6 +170,16 @@ ppSql (SQL cs src r gs ord lim dist) = do
         [ " FROM (", l', ") AS ", lqn
         , " ",  ppJoinType jointype, " (", r', ") AS ", rqn
         , " ON ", on'
+        ]
+    ppSrc (Union union_all left right) = do
+      qs <- mapM ppSql [left, right]
+      qn <- freshQueryName
+      let union = if union_all then " UNION ALL " else " UNION "
+      pure $ mconcat
+        [ " FROM ("
+        , Text.intercalate union qs
+        , ") AS "
+        , qn
         ]
 
     ppJoinType LeftJoin  = "LEFT JOIN"

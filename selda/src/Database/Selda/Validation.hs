@@ -7,22 +7,33 @@ module Database.Selda.Validation
   , describeTable, diffTable, diffTables
   , validateTable, validateSchema
   ) where
-import Control.Monad.Catch
+import Control.Monad.Catch ( MonadThrow(..) )
 import Data.List ((\\))
 import Data.Maybe (catMaybes)
-#if !MIN_VERSION_base(4, 11, 0)
-import Data.Monoid ((<>))
-#endif
 import Data.Text (pack, unpack, intercalate)
 import Database.Selda
-import Database.Selda.Backend
+    ( Text,
+      MonadIO(liftIO),
+      TableName,
+      ColName,
+      Table(..),
+      MonadSelda )
+import Database.Selda.Backend.Internal
+    ( SqlTypeRep(TInt64, TRowID),
+      SeldaBackend(getTableInfo),
+      ColumnInfo(colType, colIsAutoPrimary, colIsNullable, colHasIndex,
+                 colFKs, colName),
+      TableInfo(tableColumnInfos, tableUniqueGroups, tablePrimaryKey),
+      tableInfo,
+      withBackend )
+import Database.Selda.Types ( fromColName, fromTableName )
 import Database.Selda.Table.Type (tableCols)
 import Database.Selda.Table.Validation (ValidationError (..), validateOrThrow)
 
 -- | Are the given types compatible?
 isCompatibleWith :: SqlTypeRep -> SqlTypeRep -> Bool
-isCompatibleWith TRowID TInt = True
-isCompatibleWith TInt TRowID = True
+isCompatibleWith TRowID TInt64 = True
+isCompatibleWith TInt64 TRowID = True
 isCompatibleWith a b         = a == b
 
 -- | Validate a table schema, and check it for consistency against the current
@@ -227,7 +238,9 @@ diffColumns inschema indb =
              (colFKs db \\ colFKs schema)
        ]))
       where
-        Right schemaColType = colType schema
+        schemaColType = case colType schema of
+          Right t -> t
+          Left t -> error $ "Selda has no idea what to make of this type: " ++ show t
         check :: Eq a
               => (ColumnInfo -> a)
               -> (a -> ColumnDiff)

@@ -1,4 +1,4 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, DefaultSignatures, CPP, TypeFamilies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, CPP, TypeFamilies #-}
 -- | Internal backend API.
 --   Using anything exported from this module may or may not invalidate any
 --   safety guarantees made by Selda; use at your own peril.
@@ -20,22 +20,40 @@ module Database.Selda.Backend.Internal
 import Data.List (nub)
 import Database.Selda.SQL (Param (..))
 import Database.Selda.SqlType
-import Database.Selda.Table hiding (colName, colType, colFKs)
-import qualified Database.Selda.Table as Table (ColInfo (..))
+    ( SqlValue(..),
+      Lit(..),
+      SqlType(..),
+      SqlTypeRep(..),
+      sqlDateTimeFormat,
+      sqlDateFormat,
+      sqlTimeFormat )
+import Database.Selda.Table.Type
+    ( ColAttr(..),
+      AutoIncType(..),
+      Table(Table, tableAttrs, tableName, tableCols),
+      isAutoPrimary,
+      isPrimary,
+      isUnique )
+import qualified Database.Selda.Table.Type as Table ( ColInfo(..) )
 import Database.Selda.SQL.Print.Config
+    ( PPConfig(..), defPPConfig )
 import Database.Selda.Types (TableName, ColName)
-import Control.Concurrent
+import Data.Int (Int64)
+import Control.Concurrent ( newMVar, putMVar, takeMVar, MVar )
 import Control.Monad.Catch
-import Control.Monad.IO.Class
-import Control.Monad.State
-import Data.Dynamic
+    ( Exception, bracket, MonadCatch, MonadMask, MonadThrow(..) )
+import Control.Monad.IO.Class ( MonadIO(..) )
+import Control.Monad.Reader
+    ( MonadTrans(..), when, ReaderT(..), MonadReader(ask) )
+import Data.Dynamic ( Typeable, Dynamic )
 import qualified Data.IntMap as M
 import Data.IORef
+    ( IORef, atomicModifyIORef', newIORef, readIORef )
 import Data.Text (Text)
 import System.IO.Unsafe (unsafePerformIO)
-#if !MIN_VERSION_base(4, 13, 0)
-import Control.Monad.Fail (MonadFail)
-#endif
+
+
+
 
 -- | Uniquely identifies some particular backend.
 --
@@ -126,8 +144,10 @@ allStmts = fmap (map (\(k, v) -> (StmtID k, stmtHandle v)) . M.toList)
 
 -- | Comprehensive information about a table.
 data TableInfo = TableInfo
-  { -- | Ordered information about each table column.
-    tableColumnInfos :: [ColumnInfo]
+  { -- | Name of the table.
+    tableInfoName :: TableName
+    -- | Ordered information about each table column.
+  , tableColumnInfos :: [ColumnInfo]
     -- | Unordered list of all (non-PK) uniqueness constraints on this table.
   , tableUniqueGroups :: [[ColName]]
     -- | Unordered list of all primary key constraints on this table.
@@ -167,7 +187,8 @@ fromColInfo ci = ColumnInfo
 -- | Get the column information for each column in the given table.
 tableInfo :: Table a -> TableInfo
 tableInfo t = TableInfo
-  { tableColumnInfos = map fromColInfo (tableCols t)
+  { tableInfoName = tableName t
+  , tableColumnInfos = map fromColInfo (tableCols t)
   , tableUniqueGroups = uniqueGroups
   , tablePrimaryKey = pkGroup
   }
@@ -197,7 +218,7 @@ data SeldaBackend b = SeldaBackend
     -- | Execute an SQL statement and return the last inserted primary key,
     --   where the primary key is auto-incrementing.
     --   Backends must take special care to make this thread-safe.
-  , runStmtWithPK :: Text -> [Param] -> IO Int
+  , runStmtWithPK :: Text -> [Param] -> IO Int64
 
     -- | Prepare a statement using the given statement identifier.
   , prepareStmt :: StmtID -> [SqlTypeRep] -> Text -> IO Dynamic
@@ -256,14 +277,14 @@ withBackend :: MonadSelda m => (SeldaBackend (Backend m) -> m a) -> m a
 withBackend m = withConnection (m . connBackend)
 
 -- | Monad transformer adding Selda SQL capabilities.
-newtype SeldaT b m a = S {unS :: StateT (SeldaConnection b) m a}
+newtype SeldaT b m a = S {unS :: ReaderT (SeldaConnection b) m a}
   deriving ( Functor, Applicative, Monad, MonadIO
            , MonadThrow, MonadCatch, MonadMask , MonadFail
            )
 
 instance (MonadIO m, MonadMask m) => MonadSelda (SeldaT b m) where
   type Backend (SeldaT b m) = b
-  withConnection m = S get >>= m
+  withConnection m = S ask >>= m
 
 instance MonadTrans (SeldaT b) where
   lift = S . lift
@@ -286,4 +307,4 @@ runSeldaT m c =
       closed <- liftIO $ readIORef (connClosed c)
       when closed $ do
         liftIO $ throwM $ DbError "runSeldaT called with a closed connection"
-      fst <$> runStateT (unS m) c
+      runReaderT (unS m) c

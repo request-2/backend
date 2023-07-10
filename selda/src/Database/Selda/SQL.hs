@@ -1,16 +1,14 @@
 {-# LANGUAGE GADTs, OverloadedStrings, ScopedTypeVariables, RecordWildCards #-}
-{-# LANGUAGE TypeOperators, FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances, UndecidableInstances #-}
 {-# LANGUAGE RankNTypes, CPP, MultiParamTypeClasses #-}
 -- | SQL AST and parameters for prepared statements.
 module Database.Selda.SQL where
-import Data.String
+import Data.String ( IsString(..) )
 import Data.Text (Text)
-import Database.Selda.Exp
+import Database.Selda.Exp ( Names(..), Exp, SomeCol )
 import Database.Selda.SqlType
-import Database.Selda.Types
-#if !MIN_VERSION_base(4, 11, 0)
-import Data.Semigroup (Semigroup (..))
-#endif
+    ( Lit, SqlType(mkLit), SqlTypeRep, litType, compLit )
+import Database.Selda.Types ( TableName )
 
 instance Semigroup QueryFragment where
   (<>) = RawCat
@@ -27,6 +25,7 @@ instance IsString QueryFragment where
 data SqlSource
  = TableName !TableName
  | Product ![SQL]
+ | Union !Bool !SQL !SQL
  | Join !JoinType !(Exp SQL Bool) !SQL !SQL
  | Values ![SomeCol SQL] ![[Param]]
  | RawSql !QueryFragment
@@ -37,13 +36,14 @@ data JoinType = InnerJoin | LeftJoin
 
 -- | AST for SQL queries.
 data SQL = SQL
-  { cols      :: ![SomeCol SQL]
-  , source    :: !SqlSource
-  , restricts :: ![Exp SQL Bool]
-  , groups    :: ![SomeCol SQL]
-  , ordering  :: ![(Order, SomeCol SQL)]
-  , limits    :: !(Maybe (Int, Int))
-  , distinct  :: !Bool
+  { cols       :: ![SomeCol SQL]
+  , source     :: !SqlSource
+  , restricts  :: ![Exp SQL Bool]
+  , groups     :: ![SomeCol SQL]
+  , ordering   :: ![(Order, SomeCol SQL)]
+  , limits     :: !(Maybe (Int, Int))
+  , liveExtras :: ![SomeCol SQL] -- ^ Columns which are never considered dead.
+  , distinct   :: !Bool
   }
 
 instance Names QueryFragment where
@@ -58,6 +58,7 @@ instance Names SqlSource where
   allNamesIn (TableName _)  = []
   allNamesIn (RawSql r)     = allNamesIn r
   allNamesIn (EmptyTable)   = []
+  allNamesIn (Union _ l r)  = concatMap allNamesIn [l, r]
 
 instance Names SQL where
   -- Note that we don't include @cols@ here: the names in @cols@ are not
@@ -79,6 +80,7 @@ sqlFrom cs src = SQL
   , groups = []
   , ordering = []
   , limits = Nothing
+  , liveExtras = []
   , distinct = False
   }
 
