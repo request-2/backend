@@ -1,3 +1,5 @@
 packages:
   ./*.cabal
   ./selda/*.cabal
+  ./selda-postgresql/*.cabal
+  ./selda-json/*.cabal
